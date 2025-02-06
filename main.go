@@ -26,8 +26,6 @@ func main() {
 		Headless(false)
 	debugUrl := ln.MustLaunch()
 	browser := rod.New().
-		// SlowMotion(time.Second).
-		// Trace(true).
 		ControlURL(debugUrl).
 		MustConnect()
 
@@ -40,15 +38,14 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	fb := &feedBrowser{
-		baseUrl:      "https://x.com",
-		username:     os.Getenv("X_USERNAME"),
-		password:     os.Getenv("X_PASSWORD"),
-		numRetries:   10,
-		logger:       logger,
-		broswer:      browser,
-		imageReqFeed: make(chan string, 1),
-	}
+	fb := newFeedBrowser(
+		logger,
+		browser,
+		make(chan string, 1),
+		10,
+		os.Getenv("X_USERNAME"),
+		os.Getenv("X_PASSWORD"),
+	)
 
 	imgProc := &imgProcessor{
 		logger:     logger.WithPrefix("img-processor"),

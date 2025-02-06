@@ -18,12 +18,30 @@ type feedBrowser struct {
 	baseUrl      string
 	username     string
 	password     string
-	numRetries   int
+	numRetries   uint
 	logger       *log.Logger
 	broswer      *rod.Browser
 	page         *rod.Page
 	imageReqFeed chan string
 	ctx          context.Context
+}
+
+func newFeedBrowser(
+	logger *log.Logger,
+	browser *rod.Browser,
+	imageReqFeed chan string,
+	numRetries uint,
+	username, password string,
+) *feedBrowser {
+	return &feedBrowser{
+		baseUrl:      "https://x.com",
+		username:     username,
+		password:     password,
+		numRetries:   numRetries,
+		logger:       logger,
+		broswer:      browser,
+		imageReqFeed: imageReqFeed,
+	}
 }
 
 func (t *feedBrowser) run(ctx context.Context) {
@@ -115,11 +133,10 @@ func navigateToLikedTweets(fb *feedBrowser) stateFunc {
 
 	select {
 	case <-loaded:
+		return scrollFeed
 	case <-failed:
 		return fb.errorf("failed to load feed")
 	}
-
-	return scrollFeed
 }
 
 func scrollFeed(fb *feedBrowser) stateFunc {
@@ -146,7 +163,7 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 		}
 	}()
 
-	retries := 0
+	var retries uint = 0
 	for retries < fb.numRetries {
 		select {
 		case <-fb.ctx.Done():
@@ -158,7 +175,7 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 		page := fb.page.Context(ctx)
 		err := scrollToLast(page, &imageLoadWg)
 		if err != nil {
-			page.Mouse.Scroll(0, float64(-1*retries*100), 5)
+			page.Mouse.Scroll(0, float64(-1*int(retries)*100), 5)
 			page.Mouse.Scroll(0, float64(retries*100), 5)
 
 			retries++
