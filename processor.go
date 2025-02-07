@@ -3,16 +3,23 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/log"
 )
+
+type ImageStorerFunc func(ctx context.Context, details ImageURLDetails) error
+
+func (f ImageStorerFunc) StoreImage(ctx context.Context, details ImageURLDetails) error {
+	return f(ctx, details)
+}
+
+type ImageStorer interface {
+	StoreImage(ctx context.Context, details ImageURLDetails) error
+}
 
 type proccessedEv struct {
 	imgId  string
@@ -21,11 +28,12 @@ type proccessedEv struct {
 }
 
 type imgProcessor struct {
-	logger     *log.Logger
-	cancelFunc context.CancelFunc
-	numWorkers int
-	db         *store
-	counter    atomic.Int32
+	logger      *log.Logger
+	cancelFunc  context.CancelFunc
+	numWorkers  int
+	db          *store
+	counter     atomic.Int32
+	imageStorer ImageStorer
 }
 
 func (ip *imgProcessor) run(imageFeed <-chan string) {
@@ -79,7 +87,7 @@ func (ip *imgProcessor) processImage(feed <-chan string, evch chan<- proccessedE
 			ip.logger.Infof("%dth image from feed: %s", c, imgUrl)
 		}
 
-		uri, id, err := parseImgUrl(imgUrl)
+		details, err := parseImgUrl(imgUrl)
 		if err != nil {
 			err := ip.db.insertFailedImage(context.TODO(), storeFailedImage{
 				Src: imgUrl,
@@ -91,17 +99,18 @@ func (ip *imgProcessor) processImage(feed <-chan string, evch chan<- proccessedE
 			continue
 		}
 
-		exists, err := ip.db.imageExists(context.TODO(), id)
+		exists, err := ip.db.imageExists(context.TODO(), details.ImageId)
 		if err != nil {
 			ip.logger.Error("failed to check exists: %s", err)
 		}
 		if exists {
-			ip.logger.Info("duplicate image", "id", id)
+			ip.logger.Info("duplicate image", "id", details.ImageId)
 			continue
 		}
 
-		filename := fmt.Sprintf("%s.jpg", id)
-		err = downloadImage(context.TODO(), uri, filename)
+		// filename := fmt.Sprintf("%s.jpg", details.ImageId)
+		// err = downloadImage(context.TODO(), details.Stripped.String(), filename)
+		err = ip.imageStorer.StoreImage(context.TODO(), details)
 		if err != nil {
 			err := ip.db.insertFailedImage(context.TODO(), storeFailedImage{
 				Src: imgUrl,
@@ -114,8 +123,8 @@ func (ip *imgProcessor) processImage(feed <-chan string, evch chan<- proccessedE
 		}
 
 		err = ip.db.insertImage(context.TODO(), storeImage{
-			Id:  id,
-			Src: uri,
+			Id:  details.ImageId,
+			Src: details.Stripped.String(),
 		})
 		if err != nil {
 			ip.logger.Errorf("store image: %s", err)
@@ -123,54 +132,50 @@ func (ip *imgProcessor) processImage(feed <-chan string, evch chan<- proccessedE
 
 		evch <- proccessedEv{
 			srcUrl: imgUrl,
-			imgId:  id,
-			imgUrl: uri,
+			imgId:  details.ImageId,
+			imgUrl: details.Stripped.String(),
 		}
 	}
 }
 
-func parseImgUrl(imgUrl string) (ogUrl string, imgId string, err error) {
-	u, err := url.Parse(imgUrl)
-	if err != nil {
-		return "", "", err
-	}
+type ImageURLDetails struct {
+	Source *url.URL
 
-	query := u.Query()
-	query.Del("name")
-	u.RawQuery = query.Encode()
+	// Source stripped from 'name' query
+	Stripped *url.URL
 
-	parts := strings.Split(u.Path, "/")
-	imgId = parts[len(parts)-1]
-
-	return u.String(), imgId, nil
+	ImageId string
 }
 
-func downloadImage(ctx context.Context, imgUrl string, name string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", imgUrl, nil)
+func (d ImageURLDetails) Format() string {
+	return d.Source.Query().Get("format")
+}
+
+func (d ImageURLDetails) NameKey() string {
+	return d.Source.Query().Get("name")
+}
+
+func parseImgUrl(imgUrl string) (ImageURLDetails, error) {
+	u, err := url.Parse(imgUrl)
 	if err != nil {
-		return err
+		return ImageURLDetails{}, err
 	}
 
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
+	uClone := new(url.URL)
+	*uClone = *u
 
-	if res.StatusCode > 299 {
-		return fmt.Errorf("non success status: %d", res.StatusCode)
-	}
+	query := uClone.Query()
+	query.Del("name") // todo: keep or store as tag
+	uClone.RawQuery = query.Encode()
 
-	f, err := os.OpenFile("./test/"+name, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+	parts := strings.Split(u.Path, "/")
+	imgId := parts[len(parts)-1]
 
-	_, err = io.Copy(f, res.Body)
-	if err != nil {
-		return err
+	details := ImageURLDetails{
+		Source:   u,
+		Stripped: uClone,
+		ImageId:  imgId,
 	}
 
-	return nil
+	return details, nil
 }

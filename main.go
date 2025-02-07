@@ -48,10 +48,11 @@ func main() {
 	)
 
 	imgProc := &imgProcessor{
-		logger:     logger.WithPrefix("img-processor"),
-		cancelFunc: cancel,
-		numWorkers: 5,
-		db:         db,
+		logger:      logger.WithPrefix("img-processor"),
+		cancelFunc:  cancel,
+		numWorkers:  5,
+		db:          db,
+		imageStorer: ImageStorerFunc(downloadToFile),
 	}
 	go imgProc.run(fb.imageReqFeed)
 

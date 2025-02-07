@@ -4,6 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -106,4 +110,34 @@ func (s *store) insertCheckpoint(ctx context.Context, checkpoint storeCheckpoint
 	`
 	_, err := s.db.ExecContext(ctx, query, checkpoint.Time, checkpoint.NumDownloaded, checkpoint.TotalDownloaded)
 	return err
+}
+
+func downloadToFile(ctx context.Context, details ImageURLDetails) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", details.Stripped.String(), nil)
+	if err != nil {
+		return err
+	}
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode > 299 {
+		return fmt.Errorf("non success status: %d", res.StatusCode)
+	}
+
+	f, err := os.OpenFile("./test/"+details.ImageId+".jpg", os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, res.Body)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
