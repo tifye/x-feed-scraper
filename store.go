@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -113,7 +114,21 @@ func (s *store) insertCheckpoint(ctx context.Context, checkpoint storeCheckpoint
 }
 
 func downloadToFile(ctx context.Context, details ImageURLDetails) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", details.Stripped.String(), nil)
+	f, err := os.OpenFile("./test/"+details.ImageId+".jpg", os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return download(ctx, details.Stripped, f)
+}
+
+func download(ctx context.Context, url *url.URL, w io.Writer) error {
+	if url == nil {
+		panic("calling download on nil URL")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -128,13 +143,7 @@ func downloadToFile(ctx context.Context, details ImageURLDetails) error {
 		return fmt.Errorf("non success status: %d", res.StatusCode)
 	}
 
-	f, err := os.OpenFile("./test/"+details.ImageId+".jpg", os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = io.Copy(f, res.Body)
+	_, err = io.Copy(w, res.Body)
 	if err != nil {
 		return err
 	}
