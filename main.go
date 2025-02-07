@@ -40,7 +40,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	imgJobStore, err := storage.NewSqliteImageJobStore(ctx, "./state2.db")
+	imgJobStore, err := storage.NewSqliteImageJobStore(ctx, "./state.db")
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func main() {
 
 	ln := launcher.NewUserMode().
 		Leakless(false).
-		Headless(false)
+		Headless(true)
 	debugUrl := ln.MustLaunch()
 	browser := rod.New().
 		ControlURL(debugUrl).

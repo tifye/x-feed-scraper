@@ -77,11 +77,8 @@ func (s *S3Storage) StoreImage(ctx context.Context, u *url.URL, imageID string) 
 		ContentType: contentTypeOf(format),
 	})
 	if err != nil {
-		s.logger.Print(err)
 		return err
 	}
-
-	s.logger.Print("mino")
 
 	return nil
 }
