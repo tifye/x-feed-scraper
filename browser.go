@@ -224,8 +224,9 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 			_ = page.Mouse.Scroll(0, float64(retries*100), 5)
 
 			retries++
-
-			fb.logger.Errorf("scroll to last: %s, retrying (%d)", err, retries)
+			if retries > 1 {
+				fb.logger.Warnf("scroll to last: %s, retrying (%d)", err, retries)
+			}
 
 			time.Sleep(time.Duration(retries) * 2 * time.Second)
 		} else {
