@@ -25,4 +25,6 @@ go.work.sum
 .env
 /images
 state.db
+state2*
 /test
+/test2
