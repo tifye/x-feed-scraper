@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 
 	"github.com/charmbracelet/log"
 	"github.com/go-rod/rod"
@@ -55,6 +56,8 @@ func main() {
 		os.Getenv("X_PASSWORD"),
 	)
 
+	wg := sync.WaitGroup{}
+
 	imgProc := &imgProcessor{
 		logger:      logger.WithPrefix("processor"),
 		cancelFunc:  cancel,
@@ -62,7 +65,13 @@ func main() {
 		imgStore:    ImageStorerFunc(imgStore),
 		imgJobStore: imgJobStore,
 	}
-	go imgProc.run(fb.imageReqFeed)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		imgProc.run(ctx, fb.imageReqFeed)
+	}()
 
 	fb.run(ctx)
+
+	wg.Wait()
 }

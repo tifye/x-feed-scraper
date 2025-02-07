@@ -56,11 +56,13 @@ func (fb *feedBrowser) run(ctx context.Context) {
 
 func (fb *feedBrowser) errorf(format string, args ...interface{}) stateFunc {
 	fb.logger.Errorf(format, args...)
+	close(fb.imageReqFeed)
 	return nil
 }
 
 func (fb *feedBrowser) error(err error) stateFunc {
 	fb.logger.Error(err)
+	close(fb.imageReqFeed)
 	return nil
 }
 
@@ -227,6 +229,7 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 		cancel()
 	}
 
+	close(fb.imageReqFeed)
 	return nil
 }
 

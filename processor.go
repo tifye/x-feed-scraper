@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/charmbracelet/log"
 )
@@ -33,27 +35,57 @@ type imgProcessor struct {
 	counter     atomic.Int32
 	imgStore    ImageStorer
 	imgJobStore ImageJobStorer
+	workerWG    sync.WaitGroup
 }
 
-func (ip *imgProcessor) run(imageFeed <-chan string) {
+func (ip *imgProcessor) run(ctx context.Context, imageFeed <-chan string) {
 	feed := make(chan string, ip.numWorkers)
-	defer func() {
-		close(feed)
-	}()
-
-	for range ip.numWorkers {
-		go ip.processImage(feed)
+	ip.workerWG.Add(ip.numWorkers)
+	for i := range ip.numWorkers {
+		go func() {
+			defer ip.workerWG.Done()
+			ip.consumeImages(ctx, feed)
+			ip.logger.Debugf("worker %d done", i)
+		}()
 	}
 
 	for imgUrl := range imageFeed {
 		feed <- imgUrl
 	}
+
+	close(feed)
+	ip.workerWG.Wait()
 }
 
-func (ip *imgProcessor) processImage(feed <-chan string) {
-	for imgUrl := range feed {
-		ctx := context.TODO()
+func (ip *imgProcessor) processImage(ctx context.Context, logger *log.Logger, u *url.URL, imgID string) error {
+	exists, err := ip.imgJobStore.HasDownloaded(ctx, imgID)
+	if err != nil {
+		logger.Error("failed to check exists", "err", err)
+	}
+	if exists {
+		logger.Debug("duplicate image")
+		return nil
+	}
 
+	err = ip.imgStore.StoreImage(ctx, u, imgID)
+	if err != nil {
+		err := ip.imgJobStore.MarkAsFailed(ctx, imgID, u.String(), fmt.Errorf("download failed: %s", err))
+		if err != nil {
+			return fmt.Errorf("mark as failed: %s", err)
+		}
+		return nil
+	}
+
+	err = ip.imgJobStore.MarkAsDownloaded(ctx, imgID, u)
+	if err != nil {
+		return fmt.Errorf("mark as downloaded: %s", err)
+	}
+
+	return nil
+}
+
+func (ip *imgProcessor) consumeImages(ctx context.Context, feed <-chan string) {
+	for imgUrl := range feed {
 		if c := ip.counter.Add(1); c%100 == 0 {
 			ip.logger.Infof("%dth image from feed: %s", c, imgUrl)
 		}
@@ -62,34 +94,18 @@ func (ip *imgProcessor) processImage(feed <-chan string) {
 		if err != nil {
 			err := ip.imgJobStore.MarkAsFailed(ctx, imgID, imgUrl, fmt.Errorf("parse url: %w", err))
 			if err != nil {
-				ip.logger.Error("mark as failed", "err", err)
+				ip.logger.Error("mark as failed", "url", imgUrl, "err", err)
 			}
 			continue
 		}
 		logger := ip.logger.With("url", URL.String(), "id", imgID)
 
-		exists, err := ip.imgJobStore.HasDownloaded(ctx, imgID)
+		ctx, cancel := context.WithTimeout(ctx, time.Minute)
+		err = ip.processImage(ctx, logger, URL, imgID)
 		if err != nil {
-			logger.Error("failed to check exists", "err", err)
+			logger.Error(err)
 		}
-		if exists {
-			logger.Debug("duplicate image")
-			continue
-		}
-
-		err = ip.imgStore.StoreImage(ctx, URL, imgID)
-		if err != nil {
-			err := ip.imgJobStore.MarkAsFailed(ctx, imgID, imgUrl, fmt.Errorf("download failed: %s", err))
-			if err != nil {
-				logger.Error("mark as failed", "err", err)
-			}
-			continue
-		}
-
-		err = ip.imgJobStore.MarkAsDownloaded(ctx, imgID, URL)
-		if err != nil {
-			logger.Error("mark as downloaded", "err", err)
-		}
+		cancel()
 	}
 }
 
