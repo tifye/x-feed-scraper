@@ -17,9 +17,20 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
-	db, err := newStore(context.TODO())
+	logger := log.NewWithOptions(os.Stdout, log.Options{
+		ReportCaller:    true,
+		ReportTimestamp: false,
+		Level:           log.DebugLevel,
+	})
+
+	imgStore, err := storage.FileImageStore("./test")
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
+	}
+
+	imgJobStore, err := storage.NewSqliteImageJobStore(context.TODO(), "./state.db")
+	if err != nil {
+		panic(err)
 	}
 
 	ln := launcher.NewUserMode().
@@ -29,17 +40,6 @@ func main() {
 	browser := rod.New().
 		ControlURL(debugUrl).
 		MustConnect()
-
-	logger := log.NewWithOptions(os.Stdout, log.Options{
-		ReportCaller:    true,
-		ReportTimestamp: false,
-		Level:           log.DebugLevel,
-	})
-
-	imgStore, err := storage.FileImageStore("./test2")
-	if err != nil {
-		panic(err)
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -57,8 +57,8 @@ func main() {
 		logger:      logger.WithPrefix("img-processor"),
 		cancelFunc:  cancel,
 		numWorkers:  5,
-		db:          db,
-		imageStorer: ImageStorerFunc(imgStore),
+		imgStore:    ImageStorerFunc(imgStore),
+		imgJobStore: imgJobStore,
 	}
 	go imgProc.run(fb.imageReqFeed)
 

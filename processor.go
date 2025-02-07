@@ -20,13 +20,19 @@ type ImageStorer interface {
 	StoreImage(ctx context.Context, u *url.URL, imageID string) error
 }
 
+type ImageJobStorer interface {
+	HasDownloaded(ctx context.Context, imageID string) (bool, error)
+	MarkAsDownloaded(ctx context.Context, imageID string, u *url.URL) error
+	MarkAsFailed(ctx context.Context, imageID string, u *url.URL, reason error) error
+}
+
 type imgProcessor struct {
 	logger      *log.Logger
 	cancelFunc  context.CancelFunc
 	numWorkers  int
-	db          *store
 	counter     atomic.Int32
-	imageStorer ImageStorer
+	imgStore    ImageStorer
+	imgJobStore ImageJobStorer
 }
 
 func (ip *imgProcessor) run(imageFeed <-chan string) {
@@ -46,23 +52,27 @@ func (ip *imgProcessor) run(imageFeed <-chan string) {
 
 func (ip *imgProcessor) processImage(feed <-chan string) {
 	for imgUrl := range feed {
+		ctx := context.TODO()
+
 		if c := ip.counter.Add(1); c%100 == 0 {
 			ip.logger.Infof("%dth image from feed: %s", c, imgUrl)
 		}
 
 		URL, imgID, err := parseImgUrl(imgUrl)
 		if err != nil {
-			err := ip.db.insertFailedImage(context.TODO(), storeFailedImage{
-				Src: URL.String(),
-				Err: fmt.Sprintf("parse url: %s", err),
-			})
+			// err := ip.db.insertFailedImage(context.TODO(), storeFailedImage{
+			// 	Src: URL.String(),
+			// 	Err: fmt.Sprintf("parse url: %s", err),
+			// })
+			err := ip.imgJobStore.MarkAsFailed(ctx, imgID, URL, fmt.Errorf("parse url: %w", err))
 			if err != nil {
 				ip.logger.Errorf("store failed image: %s", err)
 			}
 			continue
 		}
 
-		exists, err := ip.db.imageExists(context.TODO(), imgID)
+		// exists, err := ip.db.imageExists(context.TODO(), imgID)
+		exists, err := ip.imgJobStore.HasDownloaded(ctx, imgID)
 		if err != nil {
 			ip.logger.Error("failed to check exists: %s", err)
 		}
@@ -71,22 +81,24 @@ func (ip *imgProcessor) processImage(feed <-chan string) {
 			continue
 		}
 
-		err = ip.imageStorer.StoreImage(context.TODO(), URL, imgID)
+		err = ip.imgStore.StoreImage(ctx, URL, imgID)
 		if err != nil {
-			err := ip.db.insertFailedImage(context.TODO(), storeFailedImage{
-				Src: URL.String(),
-				Err: fmt.Sprintf("download failed: %s", err),
-			})
+			// err := ip.db.insertFailedImage(context.TODO(), storeFailedImage{
+			// 	Src: URL.String(),
+			// 	Err: fmt.Sprintf("download failed: %s", err),
+			// })
+			err := ip.imgJobStore.MarkAsFailed(ctx, imgID, URL, fmt.Errorf("download failed: %s", err))
 			if err != nil {
 				ip.logger.Errorf("store failed image: %s", err)
 			}
 			continue
 		}
 
-		err = ip.db.insertImage(context.TODO(), storeImage{
-			Id:  imgID,
-			Src: URL.String(),
-		})
+		// err = ip.db.insertImage(context.TODO(), storeImage{
+		// 	Id:  imgID,
+		// 	Src: URL.String(),
+		// })
+		err = ip.imgJobStore.MarkAsDownloaded(ctx, imgID, URL)
 		if err != nil {
 			ip.logger.Errorf("store image: %s", err)
 		}
