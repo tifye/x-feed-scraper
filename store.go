@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
@@ -23,12 +22,6 @@ var dbInitQuery string = `
 CREATE TABLE IF NOT EXISTS images (
 	id TEXT PRIMARY KEY,
 	src_url TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS checkpoints (
-	time TEXT NOT NULL,
-	num_downloaded INTEGER NOT NULL,
-	total_downloaded INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS failed (
@@ -95,21 +88,6 @@ func (s *store) insertFailedImage(ctx context.Context, image storeFailedImage) e
 	VALUES (?, ?)
 	`
 	_, err := s.db.ExecContext(ctx, query, image.Src, image.Err)
-	return err
-}
-
-type storeCheckpoint struct {
-	Time            time.Time `db:"time"`
-	NumDownloaded   int       `db:"num_downloaded"`
-	TotalDownloaded int       `db:"total_downloaded"`
-}
-
-func (s *store) insertCheckpoint(ctx context.Context, checkpoint storeCheckpoint) error {
-	query := `
-	INSERT INTO checkpoints (time, num_downloaded, total_downloaded)
-	VALUES (?, ?, ?)
-	`
-	_, err := s.db.ExecContext(ctx, query, checkpoint.Time, checkpoint.NumDownloaded, checkpoint.TotalDownloaded)
 	return err
 }
 

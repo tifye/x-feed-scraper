@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/charmbracelet/log"
 )
@@ -38,16 +37,12 @@ type imgProcessor struct {
 
 func (ip *imgProcessor) run(imageFeed <-chan string) {
 	feed := make(chan string, ip.numWorkers)
-	evch := make(chan proccessedEv)
 	defer func() {
-		close(evch)
 		close(feed)
 	}()
 
-	go ip.trackDownloads(evch)
-
 	for range ip.numWorkers {
-		go ip.processImage(feed, evch)
+		go ip.processImage(feed)
 	}
 
 	for imgUrl := range imageFeed {
@@ -55,33 +50,7 @@ func (ip *imgProcessor) run(imageFeed <-chan string) {
 	}
 }
 
-func (ip *imgProcessor) trackDownloads(evch <-chan proccessedEv) {
-	ticker := time.NewTicker(5 * time.Minute)
-	numDownloaded := 0
-	totalDownloaded := 0
-	for ev := range evch {
-		numDownloaded += 1
-		totalDownloaded += 1
-
-		select {
-		case <-ticker.C:
-			err := ip.db.insertCheckpoint(context.TODO(), storeCheckpoint{
-				Time:            time.Now(),
-				NumDownloaded:   numDownloaded,
-				TotalDownloaded: totalDownloaded,
-			})
-			if err != nil {
-				ip.logger.Errorf("insert checkpoint: %s", err)
-			} else {
-				ip.logger.Info("checkpoint hit", "imgId", ev.imgId, "since last", numDownloaded, "total", totalDownloaded)
-				numDownloaded = 0
-			}
-		default:
-		}
-	}
-}
-
-func (ip *imgProcessor) processImage(feed <-chan string, evch chan<- proccessedEv) {
+func (ip *imgProcessor) processImage(feed <-chan string) {
 	for imgUrl := range feed {
 		if c := ip.counter.Add(1); c%100 == 0 {
 			ip.logger.Infof("%dth image from feed: %s", c, imgUrl)
@@ -108,8 +77,6 @@ func (ip *imgProcessor) processImage(feed <-chan string, evch chan<- proccessedE
 			continue
 		}
 
-		// filename := fmt.Sprintf("%s.jpg", details.ImageId)
-		// err = downloadImage(context.TODO(), details.Stripped.String(), filename)
 		err = ip.imageStorer.StoreImage(context.TODO(), details)
 		if err != nil {
 			err := ip.db.insertFailedImage(context.TODO(), storeFailedImage{
@@ -128,12 +95,6 @@ func (ip *imgProcessor) processImage(feed <-chan string, evch chan<- proccessedE
 		})
 		if err != nil {
 			ip.logger.Errorf("store image: %s", err)
-		}
-
-		evch <- proccessedEv{
-			srcUrl: imgUrl,
-			imgId:  details.ImageId,
-			imgUrl: details.Stripped.String(),
 		}
 	}
 }
