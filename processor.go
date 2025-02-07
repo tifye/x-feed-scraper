@@ -20,12 +20,6 @@ type ImageStorer interface {
 	StoreImage(ctx context.Context, details ImageURLDetails) error
 }
 
-type proccessedEv struct {
-	imgId  string
-	imgUrl string
-	srcUrl string
-}
-
 type imgProcessor struct {
 	logger      *log.Logger
 	cancelFunc  context.CancelFunc
