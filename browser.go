@@ -148,7 +148,7 @@ func login(fb *feedBrowser) stateFunc {
 
 func navigateToLikedTweets(fb *feedBrowser) stateFunc {
 	hjRouter := fb.page.HijackRequests()
-	hjRouter.Add(
+	err := hjRouter.Add(
 		"https://pbs\\.twimg\\.com/media/*?format=jpg*",
 		proto.NetworkResourceTypeImage,
 		func(ctx *rod.Hijack) {
@@ -160,12 +160,15 @@ func navigateToLikedTweets(fb *feedBrowser) stateFunc {
 			ctx.ContinueRequest(&proto.FetchContinueRequest{})
 		},
 	)
+	if err == nil {
+		return fb.errorf("add hijacker: %s", err)
+	}
 	go hjRouter.Run()
 	fb.hjRouter = hjRouter
 
 	failed := make(chan struct{}, 1)
 	loaded := make(chan struct{}, 1)
-	err := rod.Try(func() {
+	err = rod.Try(func() {
 		fb.page.
 			MustNavigate(fmt.Sprintf("%s/%s/likes", fb.baseUrl, fb.username)).
 			MustWaitLoad().
