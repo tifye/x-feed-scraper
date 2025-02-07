@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"os/signal"
 
 	"github.com/charmbracelet/log"
 	"github.com/go-rod/rod"
@@ -12,6 +13,9 @@ import (
 )
 
 func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -28,7 +32,7 @@ func main() {
 		panic(err)
 	}
 
-	imgJobStore, err := storage.NewSqliteImageJobStore(context.TODO(), "./state.db")
+	imgJobStore, err := storage.NewSqliteImageJobStore(ctx, "./state.db")
 	if err != nil {
 		panic(err)
 	}
@@ -39,13 +43,11 @@ func main() {
 	debugUrl := ln.MustLaunch()
 	browser := rod.New().
 		ControlURL(debugUrl).
-		MustConnect()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+		MustConnect().
+		Context(ctx)
 
 	fb := newFeedBrowser(
-		logger,
+		logger.WithPrefix("browser"),
 		browser,
 		make(chan string, 1),
 		10,
@@ -54,7 +56,7 @@ func main() {
 	)
 
 	imgProc := &imgProcessor{
-		logger:      logger.WithPrefix("img-processor"),
+		logger:      logger.WithPrefix("processor"),
 		cancelFunc:  cancel,
 		numWorkers:  5,
 		imgStore:    ImageStorerFunc(imgStore),

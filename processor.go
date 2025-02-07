@@ -23,7 +23,7 @@ type ImageStorer interface {
 type ImageJobStorer interface {
 	HasDownloaded(ctx context.Context, imageID string) (bool, error)
 	MarkAsDownloaded(ctx context.Context, imageID string, u *url.URL) error
-	MarkAsFailed(ctx context.Context, imageID string, u *url.URL, reason error) error
+	MarkAsFailed(ctx context.Context, imageID string, uri string, reason error) error
 }
 
 type imgProcessor struct {
@@ -60,34 +60,35 @@ func (ip *imgProcessor) processImage(feed <-chan string) {
 
 		URL, imgID, err := parseImgUrl(imgUrl)
 		if err != nil {
-			err := ip.imgJobStore.MarkAsFailed(ctx, imgID, URL, fmt.Errorf("parse url: %w", err))
+			err := ip.imgJobStore.MarkAsFailed(ctx, imgID, imgUrl, fmt.Errorf("parse url: %w", err))
 			if err != nil {
-				ip.logger.Errorf("store failed image: %s", err)
+				ip.logger.Error("mark as failed", "err", err)
 			}
 			continue
 		}
+		logger := ip.logger.With("url", URL.String(), "id", imgID)
 
 		exists, err := ip.imgJobStore.HasDownloaded(ctx, imgID)
 		if err != nil {
-			ip.logger.Error("failed to check exists: %s", err)
+			logger.Error("failed to check exists", "err", err)
 		}
 		if exists {
-			ip.logger.Info("duplicate image", "id", imgID)
+			logger.Debug("duplicate image")
 			continue
 		}
 
 		err = ip.imgStore.StoreImage(ctx, URL, imgID)
 		if err != nil {
-			err := ip.imgJobStore.MarkAsFailed(ctx, imgID, URL, fmt.Errorf("download failed: %s", err))
+			err := ip.imgJobStore.MarkAsFailed(ctx, imgID, imgUrl, fmt.Errorf("download failed: %s", err))
 			if err != nil {
-				ip.logger.Errorf("store failed image: %s", err)
+				logger.Error("mark as failed", "err", err)
 			}
 			continue
 		}
 
 		err = ip.imgJobStore.MarkAsDownloaded(ctx, imgID, URL)
 		if err != nil {
-			ip.logger.Errorf("store image: %s", err)
+			logger.Error("mark as downloaded", "err", err)
 		}
 	}
 }

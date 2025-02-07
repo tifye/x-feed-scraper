@@ -59,13 +59,26 @@ func (fb *feedBrowser) errorf(format string, args ...interface{}) stateFunc {
 	return nil
 }
 
-func navigateToRoot(fb *feedBrowser) stateFunc {
-	page := fb.broswer.
-		MustPage(fb.baseUrl).
-		MustWaitIdle()
-	fb.page = page
+func (fb *feedBrowser) error(err error) stateFunc {
+	fb.logger.Error(err)
+	return nil
+}
 
-	url := page.MustInfo().URL
+func navigateToRoot(fb *feedBrowser) stateFunc {
+	var url string
+
+	err := rod.Try(func() {
+		page := fb.broswer.
+			MustPage(fb.baseUrl).
+			MustWaitIdle()
+		fb.page = page
+
+		url = page.MustInfo().URL
+	})
+	if err != nil {
+		return fb.errorf("navigate to root: %s", err)
+	}
+
 	if strings.Contains(url, "home") {
 		return navigateToLikedTweets
 	}
@@ -74,12 +87,15 @@ func navigateToRoot(fb *feedBrowser) stateFunc {
 }
 
 func navigateToLogin(fb *feedBrowser) stateFunc {
-	_ = fb.page.MustNavigate(fb.baseUrl + "/i/flow/login").
-		MustWaitIdle()
+	err := rod.Try(func() {
+		_ = fb.page.MustNavigate(fb.baseUrl + "/i/flow/login").
+			MustWaitIdle()
 
-	_, err := fb.page.ElementR("span", "Sign in to X")
+		_ = fb.page.MustElementR("span", "Sign in to X")
+
+	})
 	if err != nil {
-		return fb.errorf("failed to navigate to login")
+		return fb.errorf("navigate to login: %s", err)
 	}
 
 	return login
@@ -88,24 +104,32 @@ func navigateToLogin(fb *feedBrowser) stateFunc {
 func login(fb *feedBrowser) stateFunc {
 	page := fb.page
 
-	_ = page.MustElement("input[name=text]").
-		MustInput(fb.username)
+	var url string
 
-	_ = page.MustElement("button.css-175oi2r:nth-child(6)").
-		MustClick()
+	err := rod.Try(func() {
+		_ = page.MustElement("input[name=text]").
+			MustInput(fb.username)
 
-	_ = page.MustElement("input[name=password]").
-		MustInput(fb.password)
+		_ = page.MustElement("button.css-175oi2r:nth-child(6)").
+			MustClick()
 
-	wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
+		_ = page.MustElement("input[name=password]").
+			MustInput(fb.password)
 
-	_ = page.MustElement(".r-19yznuf").
-		MustClick()
+		wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
 
-	wait()
+		_ = page.MustElement(".r-19yznuf").
+			MustClick()
 
-	url := page.MustWaitIdle().
-		MustInfo().URL
+		wait()
+
+		url = page.MustWaitIdle().
+			MustInfo().URL
+	})
+	if err != nil {
+		return fb.errorf("exec login: %s", err)
+	}
+
 	if strings.Contains(url, "home") {
 		return navigateToLikedTweets
 	} else {
@@ -130,27 +154,34 @@ func navigateToLikedTweets(fb *feedBrowser) stateFunc {
 	go hjRouter.Run()
 	fb.hjRouter = hjRouter
 
-	fb.page.
-		MustNavigate(fmt.Sprintf("%s/%s/likes", fb.baseUrl, fb.username)).
-		MustWaitLoad().
-		MustWaitIdle()
-
 	failed := make(chan struct{}, 1)
 	loaded := make(chan struct{}, 1)
-	_ = fb.page.Race().
-		ElementX("/html/body/div[1]/div/div/div[2]/main/div/div/div/div[1]/div/div[3]/div/div/section/div/div").
-		Handle(func(e *rod.Element) error {
-			loaded <- struct{}{}
-			return nil
-		}).
-		ElementR("span", "Retry").
-		Handle(func(e *rod.Element) error {
-			failed <- struct{}{}
-			return nil
-		}).
-		MustDo()
+	err := rod.Try(func() {
+		fb.page.
+			MustNavigate(fmt.Sprintf("%s/%s/likes", fb.baseUrl, fb.username)).
+			MustWaitLoad().
+			MustWaitIdle()
+
+		_ = fb.page.Race().
+			ElementX("/html/body/div[1]/div/div/div[2]/main/div/div/div/div[1]/div/div[3]/div/div/section/div/div").
+			Handle(func(e *rod.Element) error {
+				loaded <- struct{}{}
+				return nil
+			}).
+			ElementR("span", "Retry").
+			Handle(func(e *rod.Element) error {
+				failed <- struct{}{}
+				return nil
+			}).
+			MustDo()
+	})
+	if err != nil {
+		return fb.errorf("navigate to likes: %s", err)
+	}
 
 	select {
+	case <-fb.ctx.Done():
+		return fb.error(fb.ctx.Err())
 	case <-loaded:
 		return scrollFeed
 	case <-failed:
@@ -165,7 +196,7 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 	defer func() {
 		err := fb.hjRouter.Stop()
 		if err != nil {
-			fb.logger.Errorf("failed to stop hijack router: %s", err)
+			fb.logger.Errorf("stop hijack router: %s", err)
 		}
 		fb.hjRouter = nil
 	}()
@@ -174,7 +205,7 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 	for retries < fb.numRetries {
 		select {
 		case <-fb.ctx.Done():
-			return fb.errorf("context canceled: %s", fb.ctx.Err())
+			return fb.error(fb.ctx.Err())
 		default:
 		}
 
@@ -182,12 +213,13 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 		page := fb.page.Context(ctx)
 		err := scrollToLast(page, fb.imageLoadWG)
 		if err != nil {
-			page.Mouse.Scroll(0, float64(-1*int(retries)*100), 5)
-			page.Mouse.Scroll(0, float64(retries*100), 5)
+			_ = page.Mouse.Scroll(0, float64(-1*int(retries)*100), 5)
+			_ = page.Mouse.Scroll(0, float64(retries*100), 5)
 
 			retries++
-			fb.logger.Errorf("scroll to last: %s", err)
-			fb.logger.Infof("retrying: %d", retries)
+
+			fb.logger.Errorf("scroll to last: %s, retrying (%d)", err, retries)
+
 			time.Sleep(time.Duration(retries) * 2 * time.Second)
 		} else {
 			retries = 0

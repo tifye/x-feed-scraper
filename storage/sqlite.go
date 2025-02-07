@@ -72,7 +72,7 @@ func (s *SqliteImageJobStore) HasDownloaded(ctx context.Context, id string) (boo
 	return true, nil
 }
 
-func (s *SqliteImageJobStore) MarkAsFailed(ctx context.Context, imageID string, u *url.URL, reason error) error {
+func (s *SqliteImageJobStore) MarkAsFailed(ctx context.Context, imageID string, uri string, reason error) error {
 	query := `
 	INSERT INTO failed (src_url, id, err_msg)
 	VALUES (?, ?, ?)
@@ -80,6 +80,6 @@ func (s *SqliteImageJobStore) MarkAsFailed(ctx context.Context, imageID string, 
 	if imageID == "" {
 		imageID = "unknown"
 	}
-	_, err := s.db.ExecContext(ctx, query, u.String(), imageID, reason.Error())
+	_, err := s.db.ExecContext(ctx, query, uri, imageID, reason.Error())
 	return err
 }
