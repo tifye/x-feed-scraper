@@ -10,14 +10,14 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-type ImageStorerFunc func(ctx context.Context, details ImageURLDetails) error
+type ImageStorerFunc func(ctx context.Context, u *url.URL, imageID string) error
 
-func (f ImageStorerFunc) StoreImage(ctx context.Context, details ImageURLDetails) error {
-	return f(ctx, details)
+func (f ImageStorerFunc) StoreImage(ctx context.Context, u *url.URL, imageID string) error {
+	return f(ctx, u, imageID)
 }
 
 type ImageStorer interface {
-	StoreImage(ctx context.Context, details ImageURLDetails) error
+	StoreImage(ctx context.Context, u *url.URL, imageID string) error
 }
 
 type imgProcessor struct {
@@ -50,10 +50,10 @@ func (ip *imgProcessor) processImage(feed <-chan string) {
 			ip.logger.Infof("%dth image from feed: %s", c, imgUrl)
 		}
 
-		details, err := parseImgUrl(imgUrl)
+		URL, imgID, err := parseImgUrl(imgUrl)
 		if err != nil {
 			err := ip.db.insertFailedImage(context.TODO(), storeFailedImage{
-				Src: imgUrl,
+				Src: URL.String(),
 				Err: fmt.Sprintf("parse url: %s", err),
 			})
 			if err != nil {
@@ -62,19 +62,19 @@ func (ip *imgProcessor) processImage(feed <-chan string) {
 			continue
 		}
 
-		exists, err := ip.db.imageExists(context.TODO(), details.ImageId)
+		exists, err := ip.db.imageExists(context.TODO(), imgID)
 		if err != nil {
 			ip.logger.Error("failed to check exists: %s", err)
 		}
 		if exists {
-			ip.logger.Info("duplicate image", "id", details.ImageId)
+			ip.logger.Info("duplicate image", "id", imgID)
 			continue
 		}
 
-		err = ip.imageStorer.StoreImage(context.TODO(), details)
+		err = ip.imageStorer.StoreImage(context.TODO(), URL, imgID)
 		if err != nil {
 			err := ip.db.insertFailedImage(context.TODO(), storeFailedImage{
-				Src: imgUrl,
+				Src: URL.String(),
 				Err: fmt.Sprintf("download failed: %s", err),
 			})
 			if err != nil {
@@ -84,8 +84,8 @@ func (ip *imgProcessor) processImage(feed <-chan string) {
 		}
 
 		err = ip.db.insertImage(context.TODO(), storeImage{
-			Id:  details.ImageId,
-			Src: details.Stripped.String(),
+			Id:  imgID,
+			Src: URL.String(),
 		})
 		if err != nil {
 			ip.logger.Errorf("store image: %s", err)
@@ -93,44 +93,14 @@ func (ip *imgProcessor) processImage(feed <-chan string) {
 	}
 }
 
-type ImageURLDetails struct {
-	Source *url.URL
-
-	// Source stripped from 'name' query
-	Stripped *url.URL
-
-	ImageId string
-}
-
-func (d ImageURLDetails) Format() string {
-	return d.Source.Query().Get("format")
-}
-
-func (d ImageURLDetails) NameKey() string {
-	return d.Source.Query().Get("name")
-}
-
-func parseImgUrl(imgUrl string) (ImageURLDetails, error) {
+func parseImgUrl(imgUrl string) (*url.URL, string, error) {
 	u, err := url.Parse(imgUrl)
 	if err != nil {
-		return ImageURLDetails{}, err
+		return nil, "", err
 	}
-
-	uClone := new(url.URL)
-	*uClone = *u
-
-	query := uClone.Query()
-	query.Del("name") // todo: keep or store as tag
-	uClone.RawQuery = query.Encode()
 
 	parts := strings.Split(u.Path, "/")
 	imgId := parts[len(parts)-1]
 
-	details := ImageURLDetails{
-		Source:   u,
-		Stripped: uClone,
-		ImageId:  imgId,
-	}
-
-	return details, nil
+	return u, imgId, nil
 }

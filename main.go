@@ -8,6 +8,7 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/joho/godotenv"
+	"github.com/tifye/x-feed-scraper/storage"
 )
 
 func main() {
@@ -35,6 +36,11 @@ func main() {
 		Level:           log.DebugLevel,
 	})
 
+	imgStore, err := storage.FileImageStore("./test2")
+	if err != nil {
+		panic(err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -52,7 +58,7 @@ func main() {
 		cancelFunc:  cancel,
 		numWorkers:  5,
 		db:          db,
-		imageStorer: ImageStorerFunc(downloadToFile),
+		imageStorer: ImageStorerFunc(imgStore),
 	}
 	go imgProc.run(fb.imageReqFeed)
 

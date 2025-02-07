@@ -4,11 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
@@ -89,42 +84,4 @@ func (s *store) insertFailedImage(ctx context.Context, image storeFailedImage) e
 	`
 	_, err := s.db.ExecContext(ctx, query, image.Src, image.Err)
 	return err
-}
-
-func downloadToFile(ctx context.Context, details ImageURLDetails) error {
-	f, err := os.OpenFile("./test/"+details.ImageId+".jpg", os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	return download(ctx, details.Stripped, f)
-}
-
-func download(ctx context.Context, url *url.URL, w io.Writer) error {
-	if url == nil {
-		panic("calling download on nil URL")
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url.String(), nil)
-	if err != nil {
-		return err
-	}
-
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode > 299 {
-		return fmt.Errorf("non success status: %d", res.StatusCode)
-	}
-
-	_, err = io.Copy(w, res.Body)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
