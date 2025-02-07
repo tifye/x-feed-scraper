@@ -53,9 +53,18 @@ func NewS3Store(ctx context.Context, logger *log.Logger) (*S3Storage, error) {
 }
 
 func (s *S3Storage) StoreImage(ctx context.Context, u *url.URL, imageID string) error {
-	rc, err := stream(ctx, u)
+	uClone := new(url.URL)
+	*uClone = *u
+	q := uClone.Query()
+	q.Set("name", "large")
+	uClone.RawQuery = q.Encode()
+	rc, err := stream(ctx, uClone)
 	if err != nil {
-		return err
+		s.logger.Warn("failed to stream large vers, falling back", "url", uClone.String(), "id", imageID)
+		rc, err = stream(ctx, u)
+		if err != nil {
+			return err
+		}
 	}
 	defer rc.Close()
 
@@ -68,8 +77,11 @@ func (s *S3Storage) StoreImage(ctx context.Context, u *url.URL, imageID string) 
 		ContentType: contentTypeOf(format),
 	})
 	if err != nil {
+		s.logger.Print(err)
 		return err
 	}
+
+	s.logger.Print("mino")
 
 	return nil
 }

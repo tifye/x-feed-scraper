@@ -160,7 +160,7 @@ func navigateToLikedTweets(fb *feedBrowser) stateFunc {
 			ctx.ContinueRequest(&proto.FetchContinueRequest{})
 		},
 	)
-	if err == nil {
+	if err != nil {
 		return fb.errorf("add hijacker: %s", err)
 	}
 	go hjRouter.Run()
