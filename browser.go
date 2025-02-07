@@ -24,6 +24,8 @@ type feedBrowser struct {
 	page         *rod.Page
 	imageReqFeed chan string
 	ctx          context.Context
+	imageLoadWG  *sync.WaitGroup
+	hjRouter     *rod.HijackRouter
 }
 
 func newFeedBrowser(
@@ -41,13 +43,14 @@ func newFeedBrowser(
 		logger:       logger,
 		broswer:      browser,
 		imageReqFeed: imageReqFeed,
+		imageLoadWG:  &sync.WaitGroup{},
 	}
 }
 
-func (t *feedBrowser) run(ctx context.Context) {
-	t.ctx = ctx
+func (fb *feedBrowser) run(ctx context.Context) {
+	fb.ctx = ctx
 	for state := navigateToRoot; state != nil; {
-		state = state(t)
+		state = state(fb)
 	}
 }
 
@@ -111,6 +114,22 @@ func login(fb *feedBrowser) stateFunc {
 }
 
 func navigateToLikedTweets(fb *feedBrowser) stateFunc {
+	hjRouter := fb.page.HijackRequests()
+	hjRouter.Add(
+		"https://pbs\\.twimg\\.com/media/*?format=jpg*",
+		proto.NetworkResourceTypeImage,
+		func(ctx *rod.Hijack) {
+			fb.imageLoadWG.Add(1)
+			defer fb.imageLoadWG.Done()
+
+			fb.imageReqFeed <- ctx.Request.URL().String()
+
+			ctx.ContinueRequest(&proto.FetchContinueRequest{})
+		},
+	)
+	go hjRouter.Run()
+	fb.hjRouter = hjRouter
+
 	fb.page.
 		MustNavigate(fmt.Sprintf("%s/%s/likes", fb.baseUrl, fb.username)).
 		MustWaitLoad().
@@ -140,27 +159,15 @@ func navigateToLikedTweets(fb *feedBrowser) stateFunc {
 }
 
 func scrollFeed(fb *feedBrowser) stateFunc {
-	imageLoadWg := sync.WaitGroup{}
-
-	hjRouter := fb.page.HijackRequests()
-	hjRouter.Add(
-		"https://pbs\\.twimg\\.com/media/*?format=jpg*",
-		proto.NetworkResourceTypeImage,
-		func(ctx *rod.Hijack) {
-			imageLoadWg.Add(1)
-			defer imageLoadWg.Done()
-
-			fb.imageReqFeed <- ctx.Request.URL().String()
-
-			ctx.ContinueRequest(&proto.FetchContinueRequest{})
-		},
-	)
-	go hjRouter.Run()
+	if fb.hjRouter == nil {
+		panic("nil hijack router")
+	}
 	defer func() {
-		err := hjRouter.Stop()
+		err := fb.hjRouter.Stop()
 		if err != nil {
 			fb.logger.Errorf("failed to stop hijack router: %s", err)
 		}
+		fb.hjRouter = nil
 	}()
 
 	var retries uint = 0
@@ -173,7 +180,7 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		page := fb.page.Context(ctx)
-		err := scrollToLast(page, &imageLoadWg)
+		err := scrollToLast(page, fb.imageLoadWG)
 		if err != nil {
 			page.Mouse.Scroll(0, float64(-1*int(retries)*100), 5)
 			page.Mouse.Scroll(0, float64(retries*100), 5)
