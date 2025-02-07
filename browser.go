@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -56,13 +57,19 @@ func (fb *feedBrowser) run(ctx context.Context) {
 
 func (fb *feedBrowser) errorf(format string, args ...interface{}) stateFunc {
 	fb.logger.Errorf(format, args...)
-	close(fb.imageReqFeed)
+	if err := fb.stopHijack(); err != nil {
+		fb.logger.Errorf("stop hijack: %s", err)
+	}
+
 	return nil
 }
 
 func (fb *feedBrowser) error(err error) stateFunc {
 	fb.logger.Error(err)
-	close(fb.imageReqFeed)
+	if err := fb.stopHijack(); err != nil {
+		fb.logger.Errorf("stop hijack: %s", err)
+	}
+
 	return nil
 }
 
@@ -196,11 +203,9 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 		panic("nil hijack router")
 	}
 	defer func() {
-		err := fb.hjRouter.Stop()
-		if err != nil {
-			fb.logger.Errorf("stop hijack router: %s", err)
+		if err := fb.stopHijack(); err != nil {
+			fb.logger.Errorf("stop hijack: %s", err)
 		}
-		fb.hjRouter = nil
 	}()
 
 	var retries uint = 0
@@ -229,7 +234,6 @@ func scrollFeed(fb *feedBrowser) stateFunc {
 		cancel()
 	}
 
-	close(fb.imageReqFeed)
 	return nil
 }
 
@@ -256,5 +260,21 @@ func scrollToLast(page *rod.Page, imageLoadWg *sync.WaitGroup) error {
 		return fmt.Errorf("found no last element: %s", err)
 	}
 
+	return nil
+}
+
+func (fb *feedBrowser) stopHijack() error {
+	if fb.hjRouter == nil {
+		return nil
+	}
+
+	err := fb.hjRouter.Stop()
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	fb.hjRouter = nil
+
+	fb.imageLoadWG.Wait()
+	close(fb.imageReqFeed)
 	return nil
 }

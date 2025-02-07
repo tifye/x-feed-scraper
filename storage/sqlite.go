@@ -43,6 +43,10 @@ func NewSqliteImageJobStore(ctx context.Context, dbFile string) (*SqliteImageJob
 	}, nil
 }
 
+func (s *SqliteImageJobStore) Close() error {
+	return s.db.Close()
+}
+
 func (s *SqliteImageJobStore) MarkAsDownloaded(ctx context.Context, imageID string, u *url.URL) error {
 	query := `
 	INSERT INTO images (id, src_url)

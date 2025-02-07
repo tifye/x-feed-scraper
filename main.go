@@ -28,15 +28,31 @@ func main() {
 		Level:           log.DebugLevel,
 	})
 
-	imgStore, err := storage.FileImageStore("./test")
+	wg := sync.WaitGroup{}
+	defer wg.Wait()
+
+	// imgStore, err := storage.FileImageStore("./test")
+	// if err != nil {
+	// 	logger.Fatal(err)
+	// }
+	imgStore, err := storage.NewS3Store(ctx, logger.WithPrefix("s3-store"))
 	if err != nil {
-		panic(err)
+		logger.Fatal(err)
 	}
 
-	imgJobStore, err := storage.NewSqliteImageJobStore(ctx, "./state.db")
+	imgJobStore, err := storage.NewSqliteImageJobStore(ctx, "./state2.db")
 	if err != nil {
-		panic(err)
+		logger.Fatal(err)
 	}
+	wg.Add(1)
+	defer func() {
+		defer wg.Done()
+		err := imgJobStore.Close()
+		if err != nil {
+			logger.Error(err)
+		}
+		logger.Debug("closed sqlite job store")
+	}()
 
 	ln := launcher.NewUserMode().
 		Leakless(false).
@@ -56,13 +72,11 @@ func main() {
 		os.Getenv("X_PASSWORD"),
 	)
 
-	wg := sync.WaitGroup{}
-
 	imgProc := &imgProcessor{
 		logger:      logger.WithPrefix("processor"),
 		cancelFunc:  cancel,
 		numWorkers:  5,
-		imgStore:    ImageStorerFunc(imgStore),
+		imgStore:    imgStore,
 		imgJobStore: imgJobStore,
 	}
 	wg.Add(1)
@@ -72,6 +86,4 @@ func main() {
 	}()
 
 	fb.run(ctx)
-
-	wg.Wait()
 }
