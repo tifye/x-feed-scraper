@@ -38,6 +38,8 @@ func NewSqliteImageJobStore(ctx context.Context, dbFile string) (*SqliteImageJob
 		return nil, err
 	}
 
+	db.SetMaxOpenConns(1)
+
 	return &SqliteImageJobStore{
 		db: db,
 	}, nil
