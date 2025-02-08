@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 
 	"github.com/charmbracelet/log"
 	"github.com/minio/minio-go/v7"
@@ -24,7 +25,11 @@ func NewS3Store(ctx context.Context, logger *log.Logger) (*S3Storage, error) {
 	endpoint := os.Getenv("S3_ENDPOINT")
 	accessKey := os.Getenv("S3_ACCESS_KEY_ID")
 	secretKey := os.Getenv("S3_SECRET_KEY")
-	useSSL := false
+	useSSL, err := strconv.ParseBool(os.Getenv("S3_USE_SSL"))
+	if err != nil {
+		logger.Info("S3_USE_SSL env not set, defaulting to 'true'")
+		useSSL = true
+	}
 
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
