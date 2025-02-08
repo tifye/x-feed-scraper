@@ -85,7 +85,6 @@ func main() {
 
 	imgProc := &imgProcessor{
 		logger:      logger.WithPrefix("processor"),
-		cancelFunc:  cancel,
 		numWorkers:  5,
 		imgStore:    imgStore,
 		imgJobStore: imgJobStore,

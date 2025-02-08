@@ -30,7 +30,6 @@ type ImageJobStorer interface {
 
 type imgProcessor struct {
 	logger      *log.Logger
-	cancelFunc  context.CancelFunc
 	numWorkers  int
 	counter     atomic.Int32
 	imgStore    ImageStorer
