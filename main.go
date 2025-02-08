@@ -53,7 +53,7 @@ func main() {
 		if err != nil {
 			logger.Error(err)
 		}
-		logger.Debug("closed sqlite job store")
+		logger.Info("closed sqlite job store")
 	}()
 
 	ln := launcher.NewUserMode().
@@ -71,6 +71,8 @@ func main() {
 			if !errors.Is(err, context.Canceled) {
 				logger.Errorf("failed to close browser: %s", err)
 			}
+		} else {
+			logger.Info("closed rod browser")
 		}
 	}()
 
@@ -95,6 +97,7 @@ func main() {
 	go func() {
 		defer wg.Done()
 		imgProc.run(ctx, fb.ImageRequestFeed())
+		logger.Info("image processor completed")
 	}()
 
 	fb.Run(ctx)

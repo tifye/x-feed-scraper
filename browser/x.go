@@ -76,13 +76,19 @@ func (fb *XFeedBrowser) errorf(format string, args ...interface{}) xFeedStateFun
 }
 
 func (fb *XFeedBrowser) error(err error) xFeedStateFunc {
-	fb.notifyStateChanged("Error")
+	if errors.Is(err, context.Canceled) {
+		fb.notifyStateChanged("Canceled")
+		fb.logger.Info(err)
+	} else {
+		fb.notifyStateChanged("Error")
+		fb.logger.Error(err)
+	}
 
-	fb.logger.Error(err)
 	if err := fb.stopHijack(); err != nil {
 		fb.logger.Errorf("stop hijack: %s", err)
 	}
 
+	close(fb.imageReqFeed)
 	return nil
 }
 
@@ -315,6 +321,5 @@ func (fb *XFeedBrowser) stopHijack() error {
 	fb.hjRouter = nil
 
 	fb.imageLoadWG.Wait()
-	close(fb.imageReqFeed)
 	return nil
 }
