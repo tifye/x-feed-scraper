@@ -64,7 +64,7 @@ func main() {
 		MustConnect().
 		Context(ctx)
 
-	fb := browser.NewFeedBrowser(
+	fb := browser.NewXFeedBrowser(
 		logger.WithPrefix("browser"),
 		rodBrowser,
 		browser.Credentials{

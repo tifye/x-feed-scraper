@@ -35,7 +35,7 @@ type XFeedBrowser struct {
 	hjRouter     *rod.HijackRouter
 }
 
-func NewFeedBrowser(
+func NewXFeedBrowser(
 	logger *log.Logger,
 	browser *rod.Browser,
 	creds Credentials,
