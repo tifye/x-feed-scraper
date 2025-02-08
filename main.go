@@ -81,7 +81,9 @@ func main() {
 			Username: os.Getenv("X_USERNAME"),
 			Password: os.Getenv("X_PASSWORD"),
 		},
-	)
+	).WithStateChangedHook(func(bs browser.BrowserState) {
+		logger.Info("State changed", "state", bs)
+	})
 
 	imgProc := &imgProcessor{
 		logger:      logger.WithPrefix("processor"),

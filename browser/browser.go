@@ -21,3 +21,5 @@ type Credentials struct {
 	Username string
 	Password string
 }
+
+type BrowserState = string

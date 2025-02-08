@@ -21,15 +21,16 @@ const (
 )
 
 type XFeedBrowser struct {
-	baseUrl      string
-	creds        Credentials
-	numRetries   uint
-	logger       *log.Logger
-	broswer      *rod.Browser
-	page         *rod.Page
-	imageReqFeed chan ImageRequest
-	imageLoadWG  *sync.WaitGroup
-	hjRouter     *rod.HijackRouter
+	baseUrl          string
+	creds            Credentials
+	numRetries       uint
+	logger           *log.Logger
+	broswer          *rod.Browser
+	page             *rod.Page
+	imageReqFeed     chan ImageRequest
+	imageLoadWG      *sync.WaitGroup
+	hjRouter         *rod.HijackRouter
+	stateChangeHooks []func(BrowserState)
 }
 
 func NewXFeedBrowser(
@@ -38,14 +39,20 @@ func NewXFeedBrowser(
 	creds Credentials,
 ) *XFeedBrowser {
 	return &XFeedBrowser{
-		baseUrl:      _DefaultXBaseURL,
-		creds:        creds,
-		numRetries:   _DefaultXFeedBrowserRetries,
-		logger:       logger,
-		broswer:      browser,
-		imageReqFeed: make(chan ImageRequest, 1),
-		imageLoadWG:  &sync.WaitGroup{},
+		baseUrl:          _DefaultXBaseURL,
+		creds:            creds,
+		numRetries:       _DefaultXFeedBrowserRetries,
+		logger:           logger,
+		broswer:          browser,
+		imageReqFeed:     make(chan ImageRequest, 1),
+		imageLoadWG:      &sync.WaitGroup{},
+		stateChangeHooks: make([]func(BrowserState), 0),
 	}
+}
+
+func (fb *XFeedBrowser) WithStateChangedHook(f func(BrowserState)) *XFeedBrowser {
+	fb.stateChangeHooks = append(fb.stateChangeHooks, f)
+	return fb
 }
 
 func (fb *XFeedBrowser) ImageRequestFeed() <-chan ImageRequest {
@@ -58,16 +65,19 @@ func (fb *XFeedBrowser) Run(ctx context.Context) {
 	}
 }
 
-func (fb *XFeedBrowser) errorf(format string, args ...interface{}) xFeedStateFunc {
-	fb.logger.Errorf(format, args...)
-	if err := fb.stopHijack(); err != nil {
-		fb.logger.Errorf("stop hijack: %s", err)
+func (fb *XFeedBrowser) notifyStateChanged(state BrowserState) {
+	for _, f := range fb.stateChangeHooks {
+		f(state)
 	}
+}
 
-	return nil
+func (fb *XFeedBrowser) errorf(format string, args ...interface{}) xFeedStateFunc {
+	return fb.error(fmt.Errorf(format, args...))
 }
 
 func (fb *XFeedBrowser) error(err error) xFeedStateFunc {
+	fb.notifyStateChanged("Error")
+
 	fb.logger.Error(err)
 	if err := fb.stopHijack(); err != nil {
 		fb.logger.Errorf("stop hijack: %s", err)
@@ -77,6 +87,8 @@ func (fb *XFeedBrowser) error(err error) xFeedStateFunc {
 }
 
 func (*XFeedBrowser) navigateToRoot(_ context.Context, fb *XFeedBrowser) xFeedStateFunc {
+	fb.notifyStateChanged("Navigating to root")
+
 	var url string
 
 	err := rod.Try(func() {
@@ -99,6 +111,8 @@ func (*XFeedBrowser) navigateToRoot(_ context.Context, fb *XFeedBrowser) xFeedSt
 }
 
 func (*XFeedBrowser) navigateToLogin(_ context.Context, fb *XFeedBrowser) xFeedStateFunc {
+	fb.notifyStateChanged("Navigating to login")
+
 	err := rod.Try(func() {
 		_ = fb.page.MustNavigate(fb.baseUrl + "/i/flow/login").
 			MustWaitIdle()
@@ -114,6 +128,8 @@ func (*XFeedBrowser) navigateToLogin(_ context.Context, fb *XFeedBrowser) xFeedS
 }
 
 func (*XFeedBrowser) login(_ context.Context, fb *XFeedBrowser) xFeedStateFunc {
+	fb.notifyStateChanged("Logging in")
+
 	page := fb.page
 
 	var url string
@@ -150,6 +166,8 @@ func (*XFeedBrowser) login(_ context.Context, fb *XFeedBrowser) xFeedStateFunc {
 }
 
 func (*XFeedBrowser) navigateToLikedTweets(ctx context.Context, fb *XFeedBrowser) xFeedStateFunc {
+	fb.notifyStateChanged("Navigating to liked tweets")
+
 	hjRouter := fb.page.HijackRequests()
 	err := hjRouter.Add(
 		"https://pbs\\.twimg\\.com/media/*?format=jpg*",
@@ -218,6 +236,8 @@ func (*XFeedBrowser) navigateToLikedTweets(ctx context.Context, fb *XFeedBrowser
 }
 
 func (*XFeedBrowser) scrollFeed(ctx context.Context, fb *XFeedBrowser) xFeedStateFunc {
+	fb.notifyStateChanged("Scrolling feed")
+
 	if fb.hjRouter == nil {
 		panic("nil hijack router")
 	}
