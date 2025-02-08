@@ -1,4 +1,4 @@
-package main
+package storage
 
 import (
 	"context"
@@ -29,7 +29,7 @@ type ImageJobStorer interface {
 	MarkAsFailed(ctx context.Context, imageID string, uri string, reason error) error
 }
 
-type imgProcessor struct {
+type ImgProcessor struct {
 	logger      *log.Logger
 	numWorkers  uint
 	counter     atomic.Uint32
@@ -38,7 +38,21 @@ type imgProcessor struct {
 	workerWG    sync.WaitGroup
 }
 
-func (ip *imgProcessor) run(ctx context.Context, imageFeed <-chan browser.ImageRequest) {
+func NewImgProcessor(
+	logger *log.Logger,
+	numWorkers uint,
+	imgStore ImageStorer,
+	imgJobStore ImageJobStorer,
+) *ImgProcessor {
+	return &ImgProcessor{
+		logger:      logger.WithPrefix("processor"),
+		numWorkers:  5,
+		imgStore:    imgStore,
+		imgJobStore: imgJobStore,
+	}
+}
+
+func (ip *ImgProcessor) Run(ctx context.Context, imageFeed <-chan browser.ImageRequest) {
 	feed := make(chan string, ip.numWorkers)
 	ip.workerWG.Add(int(ip.numWorkers))
 	for i := range ip.numWorkers {
@@ -57,7 +71,7 @@ func (ip *imgProcessor) run(ctx context.Context, imageFeed <-chan browser.ImageR
 	ip.workerWG.Wait()
 }
 
-func (ip *imgProcessor) processImage(ctx context.Context, logger *log.Logger, u *url.URL, imgID string) error {
+func (ip *ImgProcessor) processImage(ctx context.Context, logger *log.Logger, u *url.URL, imgID string) error {
 	exists, err := ip.imgJobStore.HasDownloaded(ctx, imgID)
 	if err != nil {
 		logger.Error("failed to check exists", "err", err)
@@ -84,7 +98,7 @@ func (ip *imgProcessor) processImage(ctx context.Context, logger *log.Logger, u 
 	return nil
 }
 
-func (ip *imgProcessor) consumeImages(ctx context.Context, feed <-chan string) {
+func (ip *ImgProcessor) consumeImages(ctx context.Context, feed <-chan string) {
 	for imgUrl := range feed {
 		if c := ip.counter.Add(1); c%100 == 0 {
 			ip.logger.Infof("%dth image from feed: %s", c, imgUrl)

@@ -87,16 +87,11 @@ func main() {
 		logger.Info("State changed", "state", bs)
 	})
 
-	imgProc := &imgProcessor{
-		logger:      logger.WithPrefix("processor"),
-		numWorkers:  5,
-		imgStore:    imgStore,
-		imgJobStore: imgJobStore,
-	}
+	imgProc := storage.NewImgProcessor(logger.WithPrefix("processor"), 5, imgStore, imgJobStore)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		imgProc.run(ctx, fb.ImageRequestFeed())
+		imgProc.Run(ctx, fb.ImageRequestFeed())
 		logger.Info("image processor completed")
 	}()
 
