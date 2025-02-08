@@ -69,8 +69,10 @@ func main() {
 		rodBrowser,
 		make(chan string, 1),
 		10,
-		os.Getenv("X_USERNAME"),
-		os.Getenv("X_PASSWORD"),
+		browser.Credentials{
+			Username: os.Getenv("X_USERNAME"),
+			Password: os.Getenv("X_PASSWORD"),
+		},
 	)
 
 	imgProc := &imgProcessor{

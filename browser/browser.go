@@ -15,10 +15,14 @@ import (
 
 type stateFunc func(*XFeedBrowser) stateFunc
 
+type Credentials struct {
+	Username string
+	Password string
+}
+
 type XFeedBrowser struct {
 	baseUrl      string
-	username     string
-	password     string
+	creds        Credentials
 	numRetries   uint
 	logger       *log.Logger
 	broswer      *rod.Browser
@@ -34,12 +38,11 @@ func NewFeedBrowser(
 	browser *rod.Browser,
 	imageReqFeed chan string,
 	numRetries uint,
-	username, password string,
+	creds Credentials,
 ) *XFeedBrowser {
 	return &XFeedBrowser{
 		baseUrl:      "https://x.com",
-		username:     username,
-		password:     password,
+		creds:        creds,
 		numRetries:   numRetries,
 		logger:       logger,
 		broswer:      browser,
@@ -121,13 +124,13 @@ func login(fb *XFeedBrowser) stateFunc {
 
 	err := rod.Try(func() {
 		_ = page.MustElement("input[name=text]").
-			MustInput(fb.username)
+			MustInput(fb.creds.Username)
 
 		_ = page.MustElement("button.css-175oi2r:nth-child(6)").
 			MustClick()
 
 		_ = page.MustElement("input[name=password]").
-			MustInput(fb.password)
+			MustInput(fb.creds.Password)
 
 		wait := page.WaitNavigation(proto.PageLifecycleEventNameDOMContentLoaded)
 
@@ -174,7 +177,7 @@ func navigateToLikedTweets(fb *XFeedBrowser) stateFunc {
 	loaded := make(chan struct{}, 1)
 	err = rod.Try(func() {
 		fb.page.
-			MustNavigate(fmt.Sprintf("%s/%s/likes", fb.baseUrl, fb.username)).
+			MustNavigate(fmt.Sprintf("%s/%s/likes", fb.baseUrl, fb.creds.Username)).
 			MustWaitLoad().
 			MustWaitIdle()
 
