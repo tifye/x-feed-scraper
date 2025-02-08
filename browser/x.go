@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +14,7 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-type stateFunc func(*XFeedBrowser) stateFunc
+type xFeedStateFunc func(*XFeedBrowser) xFeedStateFunc
 
 type Credentials struct {
 	Username string
@@ -22,6 +23,21 @@ type Credentials struct {
 
 const _DefaultXFeedBrowserRetries = 10
 
+type ImageFormat string
+
+const (
+	PNG  ImageFormat = "png"
+	JPEG ImageFormat = "jpeg"
+	WEBP ImageFormat = "webp"
+	GIF  ImageFormat = "gif"
+)
+
+type ImageRequest struct {
+	URL      *url.URL
+	Format   ImageFormat
+	Metadata map[string]string
+}
+
 type XFeedBrowser struct {
 	baseUrl      string
 	creds        Credentials
@@ -29,7 +45,7 @@ type XFeedBrowser struct {
 	logger       *log.Logger
 	broswer      *rod.Browser
 	page         *rod.Page
-	imageReqFeed chan string
+	imageReqFeed chan ImageRequest
 	ctx          context.Context
 	imageLoadWG  *sync.WaitGroup
 	hjRouter     *rod.HijackRouter
@@ -46,12 +62,12 @@ func NewXFeedBrowser(
 		numRetries:   _DefaultXFeedBrowserRetries,
 		logger:       logger,
 		broswer:      browser,
-		imageReqFeed: make(chan string, 1),
+		imageReqFeed: make(chan ImageRequest, 1),
 		imageLoadWG:  &sync.WaitGroup{},
 	}
 }
 
-func (fb *XFeedBrowser) ImageRequestFeed() <-chan string {
+func (fb *XFeedBrowser) ImageRequestFeed() <-chan ImageRequest {
 	return fb.imageReqFeed
 }
 
@@ -62,7 +78,7 @@ func (fb *XFeedBrowser) Run(ctx context.Context) {
 	}
 }
 
-func (fb *XFeedBrowser) errorf(format string, args ...interface{}) stateFunc {
+func (fb *XFeedBrowser) errorf(format string, args ...interface{}) xFeedStateFunc {
 	fb.logger.Errorf(format, args...)
 	if err := fb.stopHijack(); err != nil {
 		fb.logger.Errorf("stop hijack: %s", err)
@@ -71,7 +87,7 @@ func (fb *XFeedBrowser) errorf(format string, args ...interface{}) stateFunc {
 	return nil
 }
 
-func (fb *XFeedBrowser) error(err error) stateFunc {
+func (fb *XFeedBrowser) error(err error) xFeedStateFunc {
 	fb.logger.Error(err)
 	if err := fb.stopHijack(); err != nil {
 		fb.logger.Errorf("stop hijack: %s", err)
@@ -80,7 +96,7 @@ func (fb *XFeedBrowser) error(err error) stateFunc {
 	return nil
 }
 
-func (_ *XFeedBrowser) navigateToRoot(fb *XFeedBrowser) stateFunc {
+func (*XFeedBrowser) navigateToRoot(fb *XFeedBrowser) xFeedStateFunc {
 	var url string
 
 	err := rod.Try(func() {
@@ -102,7 +118,7 @@ func (_ *XFeedBrowser) navigateToRoot(fb *XFeedBrowser) stateFunc {
 	return fb.navigateToLogin
 }
 
-func (_ *XFeedBrowser) navigateToLogin(fb *XFeedBrowser) stateFunc {
+func (*XFeedBrowser) navigateToLogin(fb *XFeedBrowser) xFeedStateFunc {
 	err := rod.Try(func() {
 		_ = fb.page.MustNavigate(fb.baseUrl + "/i/flow/login").
 			MustWaitIdle()
@@ -117,7 +133,7 @@ func (_ *XFeedBrowser) navigateToLogin(fb *XFeedBrowser) stateFunc {
 	return fb.login
 }
 
-func (_ *XFeedBrowser) login(fb *XFeedBrowser) stateFunc {
+func (*XFeedBrowser) login(fb *XFeedBrowser) xFeedStateFunc {
 	page := fb.page
 
 	var url string
@@ -153,7 +169,7 @@ func (_ *XFeedBrowser) login(fb *XFeedBrowser) stateFunc {
 	}
 }
 
-func (_ *XFeedBrowser) navigateToLikedTweets(fb *XFeedBrowser) stateFunc {
+func (*XFeedBrowser) navigateToLikedTweets(fb *XFeedBrowser) xFeedStateFunc {
 	hjRouter := fb.page.HijackRequests()
 	err := hjRouter.Add(
 		"https://pbs\\.twimg\\.com/media/*?format=jpg*",
@@ -162,7 +178,20 @@ func (_ *XFeedBrowser) navigateToLikedTweets(fb *XFeedBrowser) stateFunc {
 			fb.imageLoadWG.Add(1)
 			defer fb.imageLoadWG.Done()
 
-			fb.imageReqFeed <- ctx.Request.URL().String()
+			u := ctx.Request.URL()
+			query := u.Query()
+			ogName := query.Get("name")
+			query.Set("name", "large")
+			u.RawQuery = query.Encode()
+
+			fb.imageReqFeed <- ImageRequest{
+				URL:    u,
+				Format: JPEG,
+				Metadata: map[string]string{
+					"name":         "large",
+					"originalName": ogName,
+				},
+			}
 
 			ctx.ContinueRequest(&proto.FetchContinueRequest{})
 		},
@@ -208,7 +237,7 @@ func (_ *XFeedBrowser) navigateToLikedTweets(fb *XFeedBrowser) stateFunc {
 	}
 }
 
-func (_ *XFeedBrowser) scrollFeed(fb *XFeedBrowser) stateFunc {
+func (*XFeedBrowser) scrollFeed(fb *XFeedBrowser) xFeedStateFunc {
 	if fb.hjRouter == nil {
 		panic("nil hijack router")
 	}

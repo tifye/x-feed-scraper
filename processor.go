@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/tifye/x-feed-scraper/browser"
 )
 
 type ImageStorerFunc func(ctx context.Context, u *url.URL, imageID string) error
@@ -37,7 +38,7 @@ type imgProcessor struct {
 	workerWG    sync.WaitGroup
 }
 
-func (ip *imgProcessor) run(ctx context.Context, imageFeed <-chan string) {
+func (ip *imgProcessor) run(ctx context.Context, imageFeed <-chan browser.ImageRequest) {
 	feed := make(chan string, ip.numWorkers)
 	ip.workerWG.Add(ip.numWorkers)
 	for i := range ip.numWorkers {
@@ -48,8 +49,8 @@ func (ip *imgProcessor) run(ctx context.Context, imageFeed <-chan string) {
 		}()
 	}
 
-	for imgUrl := range imageFeed {
-		feed <- imgUrl
+	for imgRequest := range imageFeed {
+		feed <- imgRequest.URL.String()
 	}
 
 	close(feed)
