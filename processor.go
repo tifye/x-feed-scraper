@@ -31,7 +31,7 @@ type ImageJobStorer interface {
 
 type imgProcessor struct {
 	logger      *log.Logger
-	numWorkers  int
+	numWorkers  uint
 	counter     atomic.Int32
 	imgStore    ImageStorer
 	imgJobStore ImageJobStorer
@@ -40,7 +40,7 @@ type imgProcessor struct {
 
 func (ip *imgProcessor) run(ctx context.Context, imageFeed <-chan browser.ImageRequest) {
 	feed := make(chan string, ip.numWorkers)
-	ip.workerWG.Add(ip.numWorkers)
+	ip.workerWG.Add(int(ip.numWorkers))
 	for i := range ip.numWorkers {
 		go func() {
 			defer ip.workerWG.Done()
