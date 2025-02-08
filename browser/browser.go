@@ -36,7 +36,6 @@ type XFeedBrowser struct {
 func NewFeedBrowser(
 	logger *log.Logger,
 	browser *rod.Browser,
-	imageReqFeed chan string,
 	numRetries uint,
 	creds Credentials,
 ) *XFeedBrowser {
@@ -46,7 +45,7 @@ func NewFeedBrowser(
 		numRetries:   numRetries,
 		logger:       logger,
 		broswer:      browser,
-		imageReqFeed: imageReqFeed,
+		imageReqFeed: make(chan string, 1),
 		imageLoadWG:  &sync.WaitGroup{},
 	}
 }
