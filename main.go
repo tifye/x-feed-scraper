@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"sync"
@@ -57,12 +58,21 @@ func main() {
 
 	ln := launcher.NewUserMode().
 		Leakless(false).
-		Headless(true)
+		Headless(false)
 	debugUrl := ln.MustLaunch()
 	rodBrowser := rod.New().
 		ControlURL(debugUrl).
 		MustConnect().
 		Context(ctx)
+	wg.Add(1)
+	defer func() {
+		defer wg.Done()
+		if err := rodBrowser.Close(); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				logger.Errorf("failed to close browser: %s", err)
+			}
+		}
+	}()
 
 	fb := browser.NewXFeedBrowser(
 		logger.WithPrefix("browser"),
