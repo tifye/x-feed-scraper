@@ -32,7 +32,7 @@ type ImageJobStorer interface {
 type imgProcessor struct {
 	logger      *log.Logger
 	numWorkers  uint
-	counter     atomic.Int32
+	counter     atomic.Uint32
 	imgStore    ImageStorer
 	imgJobStore ImageJobStorer
 	workerWG    sync.WaitGroup
