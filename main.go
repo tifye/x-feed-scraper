@@ -67,7 +67,6 @@ func main() {
 	fb := browser.NewFeedBrowser(
 		logger.WithPrefix("browser"),
 		rodBrowser,
-		10,
 		browser.Credentials{
 			Username: os.Getenv("X_USERNAME"),
 			Password: os.Getenv("X_PASSWORD"),

@@ -20,6 +20,8 @@ type Credentials struct {
 	Password string
 }
 
+const _DefaultXFeedBrowserRetries = 10
+
 type XFeedBrowser struct {
 	baseUrl      string
 	creds        Credentials
@@ -36,13 +38,12 @@ type XFeedBrowser struct {
 func NewFeedBrowser(
 	logger *log.Logger,
 	browser *rod.Browser,
-	numRetries uint,
 	creds Credentials,
 ) *XFeedBrowser {
 	return &XFeedBrowser{
 		baseUrl:      "https://x.com",
 		creds:        creds,
-		numRetries:   numRetries,
+		numRetries:   _DefaultXFeedBrowserRetries,
 		logger:       logger,
 		broswer:      browser,
 		imageReqFeed: make(chan string, 1),
