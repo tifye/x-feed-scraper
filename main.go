@@ -10,6 +10,7 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/joho/godotenv"
+	"github.com/tifye/x-feed-scraper/browser"
 	"github.com/tifye/x-feed-scraper/storage"
 )
 
@@ -58,14 +59,14 @@ func main() {
 		Leakless(false).
 		Headless(true)
 	debugUrl := ln.MustLaunch()
-	browser := rod.New().
+	rodBrowser := rod.New().
 		ControlURL(debugUrl).
 		MustConnect().
 		Context(ctx)
 
-	fb := newFeedBrowser(
+	fb := browser.NewFeedBrowser(
 		logger.WithPrefix("browser"),
-		browser,
+		rodBrowser,
 		make(chan string, 1),
 		10,
 		os.Getenv("X_USERNAME"),
@@ -82,8 +83,8 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		imgProc.run(ctx, fb.imageReqFeed)
+		imgProc.run(ctx, fb.ImageRequestFeed())
 	}()
 
-	fb.run(ctx)
+	fb.Run(ctx)
 }
