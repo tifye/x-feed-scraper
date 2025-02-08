@@ -13,9 +13,9 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-type stateFunc func(*FeedBrowser) stateFunc
+type stateFunc func(*XFeedBrowser) stateFunc
 
-type FeedBrowser struct {
+type XFeedBrowser struct {
 	baseUrl      string
 	username     string
 	password     string
@@ -35,8 +35,8 @@ func NewFeedBrowser(
 	imageReqFeed chan string,
 	numRetries uint,
 	username, password string,
-) *FeedBrowser {
-	return &FeedBrowser{
+) *XFeedBrowser {
+	return &XFeedBrowser{
 		baseUrl:      "https://x.com",
 		username:     username,
 		password:     password,
@@ -48,18 +48,18 @@ func NewFeedBrowser(
 	}
 }
 
-func (fb *FeedBrowser) ImageRequestFeed() <-chan string {
+func (fb *XFeedBrowser) ImageRequestFeed() <-chan string {
 	return fb.imageReqFeed
 }
 
-func (fb *FeedBrowser) Run(ctx context.Context) {
+func (fb *XFeedBrowser) Run(ctx context.Context) {
 	fb.ctx = ctx
 	for state := navigateToRoot; state != nil; {
 		state = state(fb)
 	}
 }
 
-func (fb *FeedBrowser) errorf(format string, args ...interface{}) stateFunc {
+func (fb *XFeedBrowser) errorf(format string, args ...interface{}) stateFunc {
 	fb.logger.Errorf(format, args...)
 	if err := fb.stopHijack(); err != nil {
 		fb.logger.Errorf("stop hijack: %s", err)
@@ -68,7 +68,7 @@ func (fb *FeedBrowser) errorf(format string, args ...interface{}) stateFunc {
 	return nil
 }
 
-func (fb *FeedBrowser) error(err error) stateFunc {
+func (fb *XFeedBrowser) error(err error) stateFunc {
 	fb.logger.Error(err)
 	if err := fb.stopHijack(); err != nil {
 		fb.logger.Errorf("stop hijack: %s", err)
@@ -77,7 +77,7 @@ func (fb *FeedBrowser) error(err error) stateFunc {
 	return nil
 }
 
-func navigateToRoot(fb *FeedBrowser) stateFunc {
+func navigateToRoot(fb *XFeedBrowser) stateFunc {
 	var url string
 
 	err := rod.Try(func() {
@@ -99,7 +99,7 @@ func navigateToRoot(fb *FeedBrowser) stateFunc {
 	return navigateToLogin
 }
 
-func navigateToLogin(fb *FeedBrowser) stateFunc {
+func navigateToLogin(fb *XFeedBrowser) stateFunc {
 	err := rod.Try(func() {
 		_ = fb.page.MustNavigate(fb.baseUrl + "/i/flow/login").
 			MustWaitIdle()
@@ -114,7 +114,7 @@ func navigateToLogin(fb *FeedBrowser) stateFunc {
 	return login
 }
 
-func login(fb *FeedBrowser) stateFunc {
+func login(fb *XFeedBrowser) stateFunc {
 	page := fb.page
 
 	var url string
@@ -150,7 +150,7 @@ func login(fb *FeedBrowser) stateFunc {
 	}
 }
 
-func navigateToLikedTweets(fb *FeedBrowser) stateFunc {
+func navigateToLikedTweets(fb *XFeedBrowser) stateFunc {
 	hjRouter := fb.page.HijackRequests()
 	err := hjRouter.Add(
 		"https://pbs\\.twimg\\.com/media/*?format=jpg*",
@@ -205,7 +205,7 @@ func navigateToLikedTweets(fb *FeedBrowser) stateFunc {
 	}
 }
 
-func scrollFeed(fb *FeedBrowser) stateFunc {
+func scrollFeed(fb *XFeedBrowser) stateFunc {
 	if fb.hjRouter == nil {
 		panic("nil hijack router")
 	}
@@ -271,7 +271,7 @@ func scrollToLast(page *rod.Page, imageLoadWg *sync.WaitGroup) error {
 	return nil
 }
 
-func (fb *FeedBrowser) stopHijack() error {
+func (fb *XFeedBrowser) stopHijack() error {
 	if fb.hjRouter == nil {
 		return nil
 	}
