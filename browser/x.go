@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -14,29 +13,12 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
-type xFeedStateFunc func(*XFeedBrowser) xFeedStateFunc
-
-type Credentials struct {
-	Username string
-	Password string
-}
-
-const _DefaultXFeedBrowserRetries = 10
-
-type ImageFormat string
+type xFeedStateFunc func(context.Context, *XFeedBrowser) xFeedStateFunc
 
 const (
-	PNG  ImageFormat = "png"
-	JPEG ImageFormat = "jpeg"
-	WEBP ImageFormat = "webp"
-	GIF  ImageFormat = "gif"
+	_DefaultXFeedBrowserRetries = 10
+	_DefaultXBaseURL            = "https://x.com"
 )
-
-type ImageRequest struct {
-	URL      *url.URL
-	Format   ImageFormat
-	Metadata map[string]string
-}
 
 type XFeedBrowser struct {
 	baseUrl      string
@@ -46,7 +28,6 @@ type XFeedBrowser struct {
 	broswer      *rod.Browser
 	page         *rod.Page
 	imageReqFeed chan ImageRequest
-	ctx          context.Context
 	imageLoadWG  *sync.WaitGroup
 	hjRouter     *rod.HijackRouter
 }
@@ -57,7 +38,7 @@ func NewXFeedBrowser(
 	creds Credentials,
 ) *XFeedBrowser {
 	return &XFeedBrowser{
-		baseUrl:      "https://x.com",
+		baseUrl:      _DefaultXBaseURL,
 		creds:        creds,
 		numRetries:   _DefaultXFeedBrowserRetries,
 		logger:       logger,
@@ -72,9 +53,8 @@ func (fb *XFeedBrowser) ImageRequestFeed() <-chan ImageRequest {
 }
 
 func (fb *XFeedBrowser) Run(ctx context.Context) {
-	fb.ctx = ctx
 	for state := fb.navigateToRoot; state != nil; {
-		state = state(fb)
+		state = state(ctx, fb)
 	}
 }
 
@@ -96,7 +76,7 @@ func (fb *XFeedBrowser) error(err error) xFeedStateFunc {
 	return nil
 }
 
-func (*XFeedBrowser) navigateToRoot(fb *XFeedBrowser) xFeedStateFunc {
+func (*XFeedBrowser) navigateToRoot(_ context.Context, fb *XFeedBrowser) xFeedStateFunc {
 	var url string
 
 	err := rod.Try(func() {
@@ -118,7 +98,7 @@ func (*XFeedBrowser) navigateToRoot(fb *XFeedBrowser) xFeedStateFunc {
 	return fb.navigateToLogin
 }
 
-func (*XFeedBrowser) navigateToLogin(fb *XFeedBrowser) xFeedStateFunc {
+func (*XFeedBrowser) navigateToLogin(_ context.Context, fb *XFeedBrowser) xFeedStateFunc {
 	err := rod.Try(func() {
 		_ = fb.page.MustNavigate(fb.baseUrl + "/i/flow/login").
 			MustWaitIdle()
@@ -133,7 +113,7 @@ func (*XFeedBrowser) navigateToLogin(fb *XFeedBrowser) xFeedStateFunc {
 	return fb.login
 }
 
-func (*XFeedBrowser) login(fb *XFeedBrowser) xFeedStateFunc {
+func (*XFeedBrowser) login(_ context.Context, fb *XFeedBrowser) xFeedStateFunc {
 	page := fb.page
 
 	var url string
@@ -169,16 +149,16 @@ func (*XFeedBrowser) login(fb *XFeedBrowser) xFeedStateFunc {
 	}
 }
 
-func (*XFeedBrowser) navigateToLikedTweets(fb *XFeedBrowser) xFeedStateFunc {
+func (*XFeedBrowser) navigateToLikedTweets(ctx context.Context, fb *XFeedBrowser) xFeedStateFunc {
 	hjRouter := fb.page.HijackRequests()
 	err := hjRouter.Add(
 		"https://pbs\\.twimg\\.com/media/*?format=jpg*",
 		proto.NetworkResourceTypeImage,
-		func(ctx *rod.Hijack) {
+		func(hijack *rod.Hijack) {
 			fb.imageLoadWG.Add(1)
 			defer fb.imageLoadWG.Done()
 
-			u := ctx.Request.URL()
+			u := hijack.Request.URL()
 			query := u.Query()
 			ogName := query.Get("name")
 			query.Set("name", "large")
@@ -193,7 +173,7 @@ func (*XFeedBrowser) navigateToLikedTweets(fb *XFeedBrowser) xFeedStateFunc {
 				},
 			}
 
-			ctx.ContinueRequest(&proto.FetchContinueRequest{})
+			hijack.ContinueRequest(&proto.FetchContinueRequest{})
 		},
 	)
 	if err != nil {
@@ -228,8 +208,8 @@ func (*XFeedBrowser) navigateToLikedTweets(fb *XFeedBrowser) xFeedStateFunc {
 	}
 
 	select {
-	case <-fb.ctx.Done():
-		return fb.error(fb.ctx.Err())
+	case <-ctx.Done():
+		return fb.error(ctx.Err())
 	case <-loaded:
 		return fb.scrollFeed
 	case <-failed:
@@ -237,7 +217,7 @@ func (*XFeedBrowser) navigateToLikedTweets(fb *XFeedBrowser) xFeedStateFunc {
 	}
 }
 
-func (*XFeedBrowser) scrollFeed(fb *XFeedBrowser) xFeedStateFunc {
+func (*XFeedBrowser) scrollFeed(ctx context.Context, fb *XFeedBrowser) xFeedStateFunc {
 	if fb.hjRouter == nil {
 		panic("nil hijack router")
 	}
@@ -250,8 +230,8 @@ func (*XFeedBrowser) scrollFeed(fb *XFeedBrowser) xFeedStateFunc {
 	var retries uint = 0
 	for retries < fb.numRetries {
 		select {
-		case <-fb.ctx.Done():
-			return fb.error(fb.ctx.Err())
+		case <-ctx.Done():
+			return fb.error(ctx.Err())
 		default:
 		}
 
