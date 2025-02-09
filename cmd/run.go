@@ -107,10 +107,10 @@ func runRun(
 		if err := rodBrowser.Close(); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				logger.Errorf("failed to close browser: %s", err)
+				return
 			}
-		} else {
-			logger.Info("closed rod browser")
 		}
+		logger.Info("closed rod browser")
 	}()
 
 	fb := browser.NewXFeedBrowser(
