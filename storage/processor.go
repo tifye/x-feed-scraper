@@ -13,14 +13,14 @@ import (
 	"github.com/tifye/x-feed-scraper/browser"
 )
 
-type ImageStorerFunc func(ctx context.Context, u *url.URL, imageID string) error
+type ImageStorerFunc func(ctx context.Context, u *url.URL, imageID string) (string, error)
 
-func (f ImageStorerFunc) StoreImage(ctx context.Context, u *url.URL, imageID string) error {
+func (f ImageStorerFunc) StoreImage(ctx context.Context, u *url.URL, imageID string) (string, error) {
 	return f(ctx, u, imageID)
 }
 
 type ImageStorer interface {
-	StoreImage(ctx context.Context, u *url.URL, imageID string) error
+	StoreImage(ctx context.Context, u *url.URL, imageID string) (string, error)
 }
 
 type ImageJobStorer interface {
@@ -71,33 +71,6 @@ func (ip *ImgProcessor) Run(ctx context.Context, imageFeed <-chan browser.ImageR
 	ip.workerWG.Wait()
 }
 
-func (ip *ImgProcessor) processImage(ctx context.Context, logger *log.Logger, u *url.URL, imgID string) error {
-	exists, err := ip.imgJobStore.HasDownloaded(ctx, imgID)
-	if err != nil {
-		logger.Error("failed to check exists", "err", err)
-	}
-	if exists {
-		logger.Debug("duplicate image")
-		return nil
-	}
-
-	err = ip.imgStore.StoreImage(ctx, u, imgID)
-	if err != nil {
-		err := ip.imgJobStore.MarkAsFailed(ctx, imgID, u.String(), fmt.Errorf("download failed: %s", err))
-		if err != nil {
-			return fmt.Errorf("mark as failed: %s", err)
-		}
-		return nil
-	}
-
-	err = ip.imgJobStore.MarkAsDownloaded(ctx, imgID, u)
-	if err != nil {
-		return fmt.Errorf("mark as downloaded: %s", err)
-	}
-
-	return nil
-}
-
 func (ip *ImgProcessor) consumeImages(ctx context.Context, feed <-chan string) {
 	for imgUrl := range feed {
 		if c := ip.counter.Add(1); c%100 == 0 {
@@ -121,6 +94,35 @@ func (ip *ImgProcessor) consumeImages(ctx context.Context, feed <-chan string) {
 		}
 		cancel()
 	}
+}
+
+func (ip *ImgProcessor) processImage(ctx context.Context, logger *log.Logger, u *url.URL, imgID string) error {
+	exists, err := ip.imgJobStore.HasDownloaded(ctx, imgID)
+	if err != nil {
+		logger.Error("failed to check exists", "err", err)
+	}
+	if exists {
+		logger.Debug("duplicate image")
+		return nil
+	}
+
+	location, err := ip.imgStore.StoreImage(ctx, u, imgID)
+	if err != nil {
+		err := ip.imgJobStore.MarkAsFailed(ctx, imgID, u.String(), fmt.Errorf("download failed: %s", err))
+		if err != nil {
+			return fmt.Errorf("mark as failed: %s", err)
+		}
+		return nil
+	}
+
+	logger.Debug("image stored", "location", location)
+
+	err = ip.imgJobStore.MarkAsDownloaded(ctx, imgID, u)
+	if err != nil {
+		return fmt.Errorf("mark as downloaded: %s", err)
+	}
+
+	return nil
 }
 
 func parseImgUrl(imgUrl string) (*url.URL, string, error) {

@@ -57,7 +57,7 @@ func NewS3Store(ctx context.Context, logger *log.Logger) (*S3Storage, error) {
 	}, nil
 }
 
-func (s *S3Storage) StoreImage(ctx context.Context, u *url.URL, imageID string) error {
+func (s *S3Storage) StoreImage(ctx context.Context, u *url.URL, imageID string) (string, error) {
 	uClone := new(url.URL)
 	*uClone = *u
 	q := uClone.Query()
@@ -68,13 +68,13 @@ func (s *S3Storage) StoreImage(ctx context.Context, u *url.URL, imageID string) 
 		s.logger.Warn("failed to stream large vers, falling back", "url", uClone.String(), "id", imageID)
 		rc, err = stream(ctx, u)
 		if err != nil {
-			return err
+			return "", err
 		}
 	}
 	defer rc.Close()
 
 	format := u.Query().Get("format")
-	_, err = s.mClient.PutObject(ctx, _BucketName, imageID, rc, -1, minio.PutObjectOptions{
+	info, err := s.mClient.PutObject(ctx, _BucketName, imageID, rc, -1, minio.PutObjectOptions{
 		UserTags: map[string]string{
 			"format": format,
 			"name":   u.Query().Get("name"),
@@ -82,10 +82,10 @@ func (s *S3Storage) StoreImage(ctx context.Context, u *url.URL, imageID string) 
 		ContentType: contentTypeOf(format),
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return info.Location, nil
 }
 
 func stream(ctx context.Context, url *url.URL) (io.ReadCloser, error) {

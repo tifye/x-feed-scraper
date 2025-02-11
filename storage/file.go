@@ -8,14 +8,15 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 )
 
-func FileImageStore(dir string) (func(ctx context.Context, u *url.URL, imageID string) error, error) {
+func FileImageStore(dir string) (func(ctx context.Context, u *url.URL, imageID string) (string, error), error) {
 	if err := os.MkdirAll(dir, 0644); err != nil {
 		return nil, err
 	}
 
-	return func(ctx context.Context, u *url.URL, imageID string) error {
+	return func(ctx context.Context, u *url.URL, imageID string) (string, error) {
 		query := u.Query()
 		query.Del("name")
 		uClone := new(url.URL)
@@ -28,7 +29,11 @@ func FileImageStore(dir string) (func(ctx context.Context, u *url.URL, imageID s
 		}
 		fpath := path.Join(dir, imageID+"."+format)
 
-		return downloadToFile(ctx, uClone, fpath)
+		absFpath, err := filepath.Abs(fpath)
+		if err != nil {
+			return "", err
+		}
+		return absFpath, downloadToFile(ctx, uClone, fpath)
 	}, nil
 }
 
