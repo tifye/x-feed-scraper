@@ -303,7 +303,7 @@ func scrollToLast(page *rod.Page, imageLoadWg *sync.WaitGroup) error {
 
 	_, err = lastEl.Element("div[data-testid=tweetText]>span")
 	if err != nil {
-		return fmt.Errorf("found no last element: %s", err)
+		return fmt.Errorf("could not find the last element: %s", err)
 	}
 
 	return nil
